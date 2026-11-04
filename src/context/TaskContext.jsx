@@ -1,24 +1,41 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { DataHydrationService } from '../common/utils/DataHydrationService';
 
-// Create the task context
+const STORAGE_KEY = 'task-dashboard:tasks';
+
 const TaskContext = createContext();
 
-// Custom hook for using task context
 export const useTaskContext = () => useContext(TaskContext);
 
-// Task provider component
+const loadTasks = () => {
+  try {
+    const savedTasks = localStorage.getItem(STORAGE_KEY);
+    if (savedTasks) {
+      const parsedTasks = JSON.parse(savedTasks);
+      if (Array.isArray(parsedTasks)) {
+        return parsedTasks;
+      }
+    }
+  } catch (error) {
+    console.error('Impossibile leggere le attività salvate:', error);
+  }
+
+  return DataHydrationService.shouldHydrate()
+    ? DataHydrationService.getInitialTasks()
+    : [];
+};
+
 export const TaskProvider = ({ children }) => {
-  const [tasks, setTasks] = useState(() => {
-    // Initialize with hydrated data if should hydrate
-    return DataHydrationService.shouldHydrate() 
-      ? DataHydrationService.getInitialTasks() 
-      : [];
-  });
+  const [tasks, setTasks] = useState(loadTasks);
   const [stats, setStats] = useState({ total: 0, completed: 0, remaining: 0 });
 
   useEffect(() => {
-    // Update stats whenever tasks change
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    } catch (error) {
+      console.error('Impossibile salvare le attività:', error);
+    }
+
     const completed = tasks.filter(task => task.isCompleted).length;
     setStats({
       total: tasks.length,
@@ -28,7 +45,7 @@ export const TaskProvider = ({ children }) => {
   }, [tasks]);
 
   const addTask = (task) => {
-    const id = Math.floor(Math.random() * 10000) + 1;
+    const id = Date.now() + Math.floor(Math.random() * 1000);
     const newTask = { id, ...task };
     setTasks([...tasks, newTask]);
     return newTask;
@@ -48,27 +65,22 @@ export const TaskProvider = ({ children }) => {
 
   const completeAllTasks = (taskIds = null) => {
     if (taskIds) {
-      // Complete specific tasks (for task lists)
       setTasks(tasks.map(task => 
         taskIds.includes(task.id) ? { ...task, isCompleted: true } : task
       ));
     } else {
-      // Complete all tasks
       setTasks(tasks.map(task => ({ ...task, isCompleted: true })));
     }
   };
 
   const deleteCompletedTasks = (taskIds = null) => {
     if (taskIds && taskIds.length > 0) {
-      // Delete specific completed tasks (for task lists)
       setTasks(tasks.filter(task => !taskIds.includes(task.id)));
     } else {
-      // Delete all completed tasks
       setTasks(tasks.filter(task => !task.isCompleted));
     }
   };
 
-  // Tag-related task operations
   const updateTasksWithEditedTag = (oldTag, newTag) => {
     setTasks(tasks.map(task => {
       if (task.tags && task.tags.includes(oldTag)) {
