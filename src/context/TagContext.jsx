@@ -2,39 +2,52 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 import { useTaskContext } from './TaskContext';
 import { DataHydrationService } from '../common/utils/DataHydrationService';
 
-// Create the tag context
+const STORAGE_KEY = 'task-dashboard:tags';
+
 const TagContext = createContext();
 
-// Custom hook for using tag context
 export const useTagContext = () => useContext(TagContext);
 
-// Tag provider component
+const loadTags = () => {
+  try {
+    const savedTags = localStorage.getItem(STORAGE_KEY);
+    if (savedTags) {
+      const parsedTags = JSON.parse(savedTags);
+      if (Array.isArray(parsedTags)) {
+        return parsedTags;
+      }
+    }
+  } catch (error) {
+    console.error('Impossibile leggere i tag salvati:', error);
+  }
+
+  return DataHydrationService.shouldHydrate()
+    ? DataHydrationService.getInitialTags()
+    : [];
+};
+
 export const TagProvider = ({ children }) => {
-  const [tags, setTags] = useState(() => {
-    // Initialize with hydrated data if should hydrate
-    return DataHydrationService.shouldHydrate() 
-      ? DataHydrationService.getInitialTags() 
-      : [];
-  });
+  const [tags, setTags] = useState(loadTags);
   const { tasks } = useTaskContext();
 
-  // Extract and collect all unique tags from tasks when tasks change
   useEffect(() => {
-    const uniqueTags = new Set();
-    
-    // Collect all tags from all tasks
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(tags));
+    } catch (error) {
+      console.error('Impossibile salvare i tag:', error);
+    }
+  }, [tags]);
+
+  useEffect(() => {
+    const uniqueTags = new Set(tags);
+
     tasks.forEach(task => {
       if (task.tags && Array.isArray(task.tags)) {
         task.tags.forEach(tag => uniqueTags.add(tag));
       }
     });
-    
-    // Add these to our existing tags (without duplicates)
-    const updatedTags = Array.from(uniqueTags);
-    setTags(prevTags => {
-      const allTags = new Set([...prevTags, ...updatedTags]);
-      return Array.from(allTags);
-    });
+
+    setTags(Array.from(uniqueTags));
   }, [tasks]);
 
   const addTag = (tag) => {
@@ -44,17 +57,11 @@ export const TagProvider = ({ children }) => {
   };
 
   const editTag = (oldTag, newTag) => {
-    // Update the tag in our tags list
     setTags(tags.map(tag => tag === oldTag ? newTag : tag));
-    
-    // The task updates will be handled inside the TaskContext
   };
 
   const deleteTag = (tagToDelete) => {
-    // Remove the tag from our tags list
     setTags(tags.filter(tag => tag !== tagToDelete));
-    
-    // The task updates will be handled inside the TaskContext
   };
 
   const handleManageTags = (operation, oldTag, newTag = null) => {
@@ -62,15 +69,12 @@ export const TagProvider = ({ children }) => {
       case 'add':
         addTag(oldTag);
         break;
-        
       case 'edit':
         editTag(oldTag, newTag);
         break;
-        
       case 'delete':
         deleteTag(oldTag);
         break;
-        
       default:
         break;
     }
